@@ -121,6 +121,7 @@ namespace Fisher {
 	class ThreadedCalculator : public Calculator<D,real_approx_t> {
 		public:
 			ThreadedCalculator( size_t numThreads = 0 );
+			virtual ~ThreadedCalculator( );
 
 		private:
 
@@ -133,14 +134,13 @@ namespace Fisher {
 			void indexCalculatorLoop( size_t, size_t );
 
 			real_approx_t sliceDelta;
-			bool sliceComplete;
+			bool workerThreadTerminateFlag;
 			
 			std::mutex mtx;
-			std::condition_variable cond, completedCond;
-			std::bitset<64> workerThreadComplete;
+			std::condition_variable workerThreadWakeCond, workerThreadSliceCompletedCond;
+			std::bitset<64> workerThreadCompleteFlags;
 			std::vector<std::thread> workerThreads;
 	};
-
 
 	// -= =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= =-
 	//    Function Definitions 
@@ -465,23 +465,40 @@ namespace Fisher {
 
 	// ThreadedCalculator::ThreadedCalculator( )
 	template< std::size_t D, typename real_approx_t >
-	ThreadedCalculator<D,real_approx_t>::ThreadedCalculator( size_t numThreads ) { 
+	ThreadedCalculator<D,real_approx_t>::ThreadedCalculator( size_t numThreads ) 
+		: workerThreadTerminateFlag( false )
+	{ 
+
+		constexpr auto threadLoopFn = &ThreadedCalculator<D,real_approx_t>::indexCalculatorLoop;
+
 		workerThreads.reserve( numThreads ); 
-
-		auto threadLoopFn = &ThreadedCalculator<D,real_approx_t>::indexCalculatorLoop;
-
 		for( auto i = 0; i < numThreads; ++i ) {
 			workerThreads.emplace_back( threadLoopFn, this, i, numThreads );
-			workerThreads.back().detach();
 		}
 
 		// Wait for workers to finish initial setup.
 		{
 			std::unique_lock<std::mutex> lck( mtx );
-			completedCond.wait( lck, [this]{ return workerThreadComplete.count() == workerThreads.size(); } );
+			workerThreadSliceCompletedCond.wait( lck, [this]{ return workerThreadCompleteFlags.count() == workerThreads.size(); } );
 		}
 
 	}
+
+	template< std::size_t D, typename real_approx_t >
+	ThreadedCalculator<D,real_approx_t>::~ThreadedCalculator( ) {
+
+		// Set the termination flag so the workers know to terminate.
+		workerThreadTerminateFlag = true;
+
+		// Wake he worker threads.
+		workerThreadWakeCond.notify_all();
+
+		// Wait for the worker threads to terminate
+		for( auto&& thrd : workerThreads ) {
+			if( thrd.joinable() ) thrd.join();
+		}
+	}
+
 
 	// ThreadedCalculator::calculateSlice( )
 	template< std::size_t D, typename real_approx_t >
@@ -505,15 +522,15 @@ namespace Fisher {
 		sliceDelta = static_cast<real_approx_t>(0);
 
 		// Initialise the worker thread completion flags.
-		workerThreadComplete.reset();
+		workerThreadCompleteFlags.reset();
 
 		// Notify workers to start working.
-		cond.notify_all();
+		workerThreadWakeCond.notify_all();
 
 		// Wait for workers to finish.
 		{
 			std::unique_lock<std::mutex> lck( mtx );
-			completedCond.wait( lck, [this]{ return workerThreadComplete.count() == workerThreads.size(); } );
+			workerThreadSliceCompletedCond.wait( lck, [this]{ return workerThreadCompleteFlags.count() == workerThreads.size(); } );
 		}
 
 		// sliceDelta is automatically accumulated by the indexCalculatorLoop( ) threads.
@@ -533,7 +550,7 @@ namespace Fisher {
 	// 		localTotal = static_cast<real_approx_t>(0);
 
 	// 		// Wait for a slice computation to start
-	// 		cond.wait( lck );
+	// 		workerThreadWakeCond.wait( lck );
 
 	// 		while( ! calc::waitingIndices.empty() ) {
 	// 			// Get the first index.
@@ -554,9 +571,9 @@ namespace Fisher {
 
 	// 		// Update 
 	// 		sliceDelta += localTotal;
-	// 		workerThreadComplete.set( ID, true );
+	// 		workerThreadCompleteFlags.set( ID, true );
 
-	// 		completedCond.notify_all();
+	// 		workerThreadSliceCompletedCond.notify_all();
 	// 	} while( true );
 
 	// }
@@ -571,17 +588,26 @@ namespace Fisher {
 		std::unique_lock<std::mutex> lck( mtx ); // Lock is locked on construction.
 		do {
 
-			workerThreadComplete.set( ID, true );
-			completedCond.notify_all();
+			// Set the complete flag and notify completion. 
+			// Note that we use this mechanism to indicate initial setup as well as slice completion
+			workerThreadCompleteFlags.set( ID, true );
+			workerThreadSliceCompletedCond.notify_all();
 
 			// Wait for a slice computation to start
-			cond.wait( lck );
+			workerThreadWakeCond.wait( lck );
+
+			// Check for termination.
+			if( workerThreadTerminateFlag ) return;
+
+			// Release the mutex (we only need read access to the waitingIndices container for computation purposes)
 			lck.unlock( );
 
-			// (Re-) Initialise local Total.
+			// Initialise local slice sub total.
 			localTotal = static_cast<real_approx_t>(0);
 
 // ***** CHANGE THIS TO USE A DEQUE INSTEAD OF A LIST *******
+
+			// Calculate the slice stride delta.
 			auto idxIt = calc::waitingIndices.cbegin();
 			for( auto i = 0; (i < ID) && (idxIt != calc::waitingIndices.cend()); ++i) ++idxIt;
 
@@ -591,7 +617,7 @@ namespace Fisher {
 				for( auto i = 0; (i < numThreads) && (idxIt != calc::waitingIndices.cend()); ++i ) ++idxIt;
 			}
 
-			// Update 
+			// Update the global slice delta.
 			lck.lock( );
 			sliceDelta += localTotal;
 
