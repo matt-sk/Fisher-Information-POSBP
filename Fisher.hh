@@ -440,7 +440,7 @@ namespace Fisher {
 		{ auto it = dP_dlambda.find( idx ); if( it != dP_dlambda.end() ) dLI_dlambda = it->second; }
 
 		// For each q[i,j], we calculate q[i,j, ...]*L[a-i, b-j, ...], skipping cases where any of the a-i, b-j, ... are less than zero.
-		for( auto q : Q ) {
+		for( auto&& q : Q ) {
 			idx_t prev_Idx;
 			size_t i;
 
