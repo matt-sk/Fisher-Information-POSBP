@@ -6,4 +6,4 @@ Fisher.so: FisherLibrary.cc Fisher.hh
 	$(CC) -O2 -std=c++14 -shared -fPIC -o Fisher.so FisherLibrary.cc
 
 Fisher: calcFisher.cc Fisher.hh
-	$(CC) -O2 -std=c++14 -o Fisher calcFisher.cc
+	$(CC) -O2 -std=c++14 -o Fisher -lboost_program_options-mt calcFisher.cc
