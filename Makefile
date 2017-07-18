@@ -1,4 +1,4 @@
-CC=g++-6
+CC=g++-7
 
 default: Fisher.so Fisher
 
