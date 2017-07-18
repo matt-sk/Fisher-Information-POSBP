@@ -148,6 +148,11 @@ namespace Fisher {
 
 	// FUnctions to calculate the index of a given index within a slice.
 	template< > 
+	size_t IdxPos::calculate<1>( const std::array<unsigned int,1>& idx, size_t s) { 
+		return 0;
+	}
+
+	template< > 
 	size_t IdxPos::calculate<2>( const std::array<unsigned int,2>& idx, size_t s) { 
 		return idx[0];
 	}
@@ -158,8 +163,8 @@ namespace Fisher {
 	}
 
 	template< > 
-	size_t IdxPos::calculate( const std::array<unsigned int,4>& idx, size_t s) { 
-		return -1;
+	size_t IdxPos::calculate<4>( const std::array<unsigned int,4>& idx, size_t s) { 
+		return (idx[0]*(3*s*(s-idx[0]+4)+idx[0]*idx[0]+11-6*idx[0]))/6 + (idx[1]*(2*(s-idx[0])-idx[1]+3))/2 + idx[2];
 	}
 
 
