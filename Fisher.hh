@@ -165,10 +165,9 @@ namespace Fisher {
 
 	template< std::size_t D, typename real_approx_t >
 	void SliceContainer<D,real_approx_t>::insertSlice( size_t s ) { 
-		size_t numIndices = boost::math::binomial_coefficient<double>( s + D - 1, s );
-		slice_t newSlice( numIndices );
+		constexpr auto C = boost::math::binomial_coefficient<double>;
 
-		data.insert( {s, newSlice} );
+		data.emplace( s, C(s + D - 1, s) );
 	}
 
 	// PreCalculator::preCalculate( )
