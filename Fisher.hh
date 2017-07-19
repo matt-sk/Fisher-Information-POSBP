@@ -25,13 +25,10 @@ namespace std
 	{
 		typedef std::array<T,N> argument_type;
 		typedef std::size_t result_type;
-		result_type operator()(argument_type const& A) const
+		result_type operator() (argument_type const& A) const
 		{
-			// std::hash<std::string> h;
-			// return h( std::string(A.cbegin(), A.cend()) );
-
 			result_type hashval = 0;
-			for( auto i = 0, posval = 1; i < N-1; ++i, posval *= 10 ) {
+			for( auto i = 0, posval = 1; i < N; ++i, posval *= 2 ) {
 				hashval += A[i]*posval;
 			}
 
@@ -105,15 +102,18 @@ namespace Fisher {
 			std::unordered_map<idx_t,real_approx_t> Q, dQ_dlambda, P, dP_dlambda; // Maybe make these map<idx_t,real_approx_t> instead of unordered_map, since they are being iterated over, but that means writing a compaitor class.
 
 			std::deque<idx_t> waitingIndices;
-			void generateSliceIndices( const size_t s ) { auto it = waitingIndices.begin(); generateSliceIndices( s, it, 0, 0 ); }
 
-			virtual real_approx_t calculateSlice( size_t );
-			virtual real_approx_t calculateIndex( const idx_t& );
+			virtual void initialiseSlice( );
+			virtual void generateSliceIndices( ) { auto it = waitingIndices.begin(); generateSliceIndices( it, 0, 0 ); }
+
+			virtual real_approx_t calculateSlice( );
+			
+			real_approx_t calculateIndex( const idx_t& );
 
 		private:
 			friend class PreCalculator<D>;
 
-			void generateSliceIndices( const size_t, typename std::deque<idx_t>::iterator&, size_t, unsigned int );
+			void generateSliceIndices( typename std::deque<idx_t>::iterator&, size_t, unsigned int );
 			size_t slice; // Currently computing slice. (May not be needed)
 			real_approx_t total;
 
@@ -130,8 +130,8 @@ namespace Fisher {
 			using idx_t = typename Calculator<D,real_approx_t>::idx_t;
 			using slice_t = typename Calculator<D,real_approx_t>::slice_t;
 
-			virtual real_approx_t calculateSlice( size_t );
-			// virtual real_approx_t calculateIndex( const idx_t& );
+			// virtual void generateSliceIndices( ) { Calculator<D,real_approx_t>::generateSliceIndices(); }
+			virtual real_approx_t calculateSlice( );
 
 			void indexCalculatorLoop( size_t, size_t );
 
@@ -187,14 +187,11 @@ namespace Fisher {
 		// Initialise the data elements.
 		calc->L.clear( );
 		calc->dL_dlambda.clear( );
+
 		calc->Q.clear( );
-		calc->Q.reserve( D+1 );
 		calc->dQ_dlambda.clear( );
-		calc->dQ_dlambda.reserve( D+1 );
 		calc->P.clear( );
-		calc->P.reserve( D+1 );
 		calc->dP_dlambda.clear( );
-		calc->dP_dlambda.reserve( D+1 );
 
 		// Initial calcualtions to turn t[], p, and lambda from our intput into T[] and v[] needed for the pre-calculated polynoials.
 		// T[i] := t[i]-t[i-1] with the understandign that t[-1]=0, and v[i] := e^(-lambda*T[i])
@@ -218,10 +215,12 @@ namespace Fisher {
 
 		denominator = (pSq*v[0]*v[1]-pSq*v[1]-2*p*v[0]*v[1]+p*v[1]+v[0]*v[1]+p);
 
+		calc->Q.rehash( 3 );
 		calc->Q[{0,1}] = -p*(p*v[0]*v[1]-p*v[1]-v[0]*v[1]+1)/denominator;
 		calc->Q[{1,0}] = -p*v[1]*(-1+v[0])*(p-1)/denominator;
 		calc->Q[{1,1}] = v[1]*pSq*(-1+v[0])/denominator;
 
+		calc->P.rehash( 4 );
 		calc->P[{0,0}] = v[1]*v[0]*(p-1)*(p-1)/denominator;
 		calc->P[{0,1}] = -v[1]*v[0]*p*(p-1)/denominator;
 		calc->P[{1,0}] = -v[1]*v[0]*p*(p-1)/denominator;
@@ -229,10 +228,12 @@ namespace Fisher {
 
 		denominator *= denominator;
 
+		calc->dQ_dlambda.rehash( 3 );
 		calc->dQ_dlambda[{0,1}] = p*v[1]*(p*T[0]*v[0]+p*T[1]*v[0]-p*T[1]-T[0]*v[0]-T[1]*v[0])/denominator;
 		calc->dQ_dlambda[{1,0}] = -p*v[1]*(p-1)*(p*T[0]*v[0]*v[1]-p*T[0]*v[0]-p*T[1]*v[0]-T[0]*v[0]*v[1]+p*T[1])/denominator;
 		calc->dQ_dlambda[{1,1}] = v[1]*pSq*(p*T[0]*v[0]*v[1]-p*T[0]*v[0]-p*T[1]*v[0]-T[0]*v[0]*v[1]+p*T[1])/denominator;
 
+		calc->dQ_dlambda.rehash( 4 );
 		calc->dP_dlambda[{0,0}] = v[1]*v[0]*(p-1)*(p-1)*p*(p*T[0]*v[1]-T[0]*v[1]-T[0]-T[1])/denominator;
 		calc->dP_dlambda[{0,1}] = -v[1]*v[0]*pSq*(p-1)*(p*T[0]*v[1]-T[0]*v[1]-T[0]-T[1])/denominator;
 		calc->dP_dlambda[{1,0}] = -v[1]*v[0]*pSq*(p-1)*(p*T[0]*v[1]-T[0]*v[1]-T[0]-T[1])/denominator;
@@ -251,6 +252,7 @@ namespace Fisher {
 
 		denominator = 3*p*v[0]*v[1]*v[2]-3*pp*v[0]*v[1]*v[2]+ppp*v[0]*v[1]*v[2]-p*v[1]*v[2]+2*pp*v[1]*v[2]-ppp*v[1]*v[2]-v[0]*v[1]*v[2]-p*v[2]+pp*v[2]-p;
 
+		calc->Q.rehash( 7 );
 		calc->Q[{0,0,1}] = -p*(-2*p*v[0]*v[1]*v[2]+pp*v[0]*v[1]*v[2]+p*v[1]*v[2]-pp*v[1]*v[2]+v[0]*v[1]*v[2]+p*v[2]-1)/denominator;
 		calc->Q[{0,1,0}] = -p*v[2]*(p-1)*(p*v[0]*v[1]-p*v[1]-v[0]*v[1]+1)/denominator;
 		calc->Q[{0,1,1}] = v[2]*pp*(p*v[0]*v[1]-p*v[1]-v[0]*v[1]+1)/denominator;
@@ -259,6 +261,7 @@ namespace Fisher {
 		calc->Q[{1,1,0}] = pp*v[1]*v[2]*(-1+v[0])*(p-1)/denominator;
 		calc->Q[{1,1,1}] = -v[2]*v[1]*ppp*(-1+v[0])/denominator;
 
+		calc->P.rehash( 8 );
 		calc->P[{0,0,0}] = v[0]*v[1]*v[2]*(p-1)*(p-1)*(p-1)/denominator;
 		calc->P[{0,0,1}] = -v[0]*v[1]*v[2]*p*(p-1)*(p-1)/denominator;
 		calc->P[{0,1,0}] = -v[0]*v[1]*v[2]*p*(p-1)*(p-1)/denominator;
@@ -270,6 +273,7 @@ namespace Fisher {
 
 		denominator *=  denominator;
 
+		calc->dQ_dlambda.rehash( 7 );
 		calc->dQ_dlambda[{0,0,1}] = -p*v[2]*(-2*p*T[0]*v[0]*v[1]-2*p*T[1]*v[0]*v[1]-2*p*T[2]*v[0]*v[1]+pp*T[0]*v[0]*v[1]+pp*T[1]*v[0]*v[1]+pp*T[2]*v[0]*v[1]+p*T[1]*v[1]+p*T[2]*v[1]-pp*T[1]*v[1]-pp*T[2]*v[1]+T[0]*v[0]*v[1]+T[1]*v[0]*v[1]+T[2]*v[0]*v[1]+p*T[2])/denominator;
 		calc->dQ_dlambda[{0,1,0}] = p*v[2]*(p-1)*(-2*p*T[0]*v[0]*v[1]*v[2]-2*p*T[1]*v[0]*v[1]*v[2]+pp*T[0]*v[0]*v[1]*v[2]+pp*T[1]*v[0]*v[1]*v[2]+p*T[0]*v[0]*v[1]+p*T[1]*v[0]*v[1]+p*T[1]*v[1]*v[2]+p*T[2]*v[0]*v[1]-pp*T[0]*v[0]*v[1]-pp*T[1]*v[0]*v[1]-pp*T[1]*v[1]*v[2]-pp*T[2]*v[0]*v[1]+T[0]*v[0]*v[1]*v[2]+T[1]*v[0]*v[1]*v[2]+pp*T[1]*v[1]+pp*T[2]*v[1]-p*T[2])/denominator;
 		calc->dQ_dlambda[{0,1,1}] = -v[2]*pp*(-2*p*T[0]*v[0]*v[1]*v[2]-2*p*T[1]*v[0]*v[1]*v[2]+pp*T[0]*v[0]*v[1]*v[2]+pp*T[1]*v[0]*v[1]*v[2]+p*T[0]*v[0]*v[1]+p*T[1]*v[0]*v[1]+p*T[1]*v[1]*v[2]+p*T[2]*v[0]*v[1]-pp*T[0]*v[0]*v[1]-pp*T[1]*v[0]*v[1]-pp*T[1]*v[1]*v[2]-pp*T[2]*v[0]*v[1]+T[0]*v[0]*v[1]*v[2]+T[1]*v[0]*v[1]*v[2]+pp*T[1]*v[1]+pp*T[2]*v[1]-p*T[2])/denominator;
@@ -278,6 +282,7 @@ namespace Fisher {
 		calc->dQ_dlambda[{1,1,0}] = pp*v[1]*v[2]*(p-1)*(-2*p*T[0]*v[0]*v[1]*v[2]+pp*T[0]*v[0]*v[1]*v[2]+p*T[0]*v[0]*v[2]+p*T[1]*v[0]*v[2]-pp*T[0]*v[0]*v[2]-pp*T[1]*v[0]*v[2]+T[0]*v[0]*v[1]*v[2]+p*T[0]*v[0]+p*T[1]*v[0]-p*T[1]*v[2]+p*T[2]*v[0]+pp*T[1]*v[2]-p*T[1]-p*T[2])/denominator;
 		calc->dQ_dlambda[{1,1,1}] = -v[2]*v[1]*ppp*(-2*p*T[0]*v[0]*v[1]*v[2]+pp*T[0]*v[0]*v[1]*v[2]+p*T[0]*v[0]*v[2]+p*T[1]*v[0]*v[2]-pp*T[0]*v[0]*v[2]-pp*T[1]*v[0]*v[2]+T[0]*v[0]*v[1]*v[2]+p*T[0]*v[0]+p*T[1]*v[0]-p*T[1]*v[2]+p*T[2]*v[0]+pp*T[1]*v[2]-p*T[1]-p*T[2])/denominator;
 
+		calc->dP_dlambda.rehash( 8 );
 		calc->dP_dlambda[{0,0,0}] = v[0]*v[1]*v[2]*(p-1)*(p-1)*(p-1)*p*(-2*p*T[0]*v[1]*v[2]+pp*T[0]*v[1]*v[2]-p*T[0]*v[2]-p*T[1]*v[2]+T[0]*v[1]*v[2]+T[0]*v[2]+T[1]*v[2]+T[0]+T[1]+T[2])/denominator;
 		calc->dP_dlambda[{0,0,1}] = -v[0]*v[1]*v[2]*pp*(p-1)*(p-1)*(-2*p*T[0]*v[1]*v[2]+pp*T[0]*v[1]*v[2]-p*T[0]*v[2]-p*T[1]*v[2]+T[0]*v[1]*v[2]+T[0]*v[2]+T[1]*v[2]+T[0]+T[1]+T[2])/denominator;
 		calc->dP_dlambda[{0,1,0}] = -v[0]*v[1]*v[2]*pp*(p-1)*(p-1)*(-2*p*T[0]*v[1]*v[2]+pp*T[0]*v[1]*v[2]-p*T[0]*v[2]-p*T[1]*v[2]+T[0]*v[1]*v[2]+T[0]*v[2]+T[1]*v[2]+T[0]+T[1]+T[2])/denominator;
@@ -301,6 +306,7 @@ namespace Fisher {
 
 		denominator = -4*p*v[0]*v[1]*v[2]*v[3]+6*pp*v[0]*v[1]*v[2]*v[3]-4*ppp*v[0]*v[1]*v[2]*v[3]+pppp*v[0]*v[1]*v[2]*v[3]+p*v[1]*v[2]*v[3]-3*pp*v[1]*v[2]*v[3]+3*ppp*v[1]*v[2]*v[3]-pppp*v[1]*v[2]*v[3]+v[0]*v[1]*v[2]*v[3]+p*v[2]*v[3]-2*pp*v[2]*v[3]+ppp*v[2]*v[3]+p*v[3]-pp*v[3]+p;
 
+		calc->Q.rehash( 15 );
 		calc->Q[{0,0,0,1}] = -p*(3*p*v[0]*v[1]*v[2]*v[3]-3*pp*v[0]*v[1]*v[2]*v[3]+ppp*v[0]*v[1]*v[2]*v[3]-p*v[1]*v[2]*v[3]+2*pp*v[1]*v[2]*v[3]-ppp*v[1]*v[2]*v[3]-v[0]*v[1]*v[2]*v[3]-p*v[2]*v[3]+pp*v[2]*v[3]-p*v[3]+1)/denominator;
 		calc->Q[{0,0,1,0}] = -p*v[3]*(p-1)*(-2*p*v[0]*v[1]*v[2]+pp*v[0]*v[1]*v[2]+p*v[1]*v[2]-pp*v[1]*v[2]+v[0]*v[1]*v[2]+p*v[2]-1)/denominator;
 		calc->Q[{0,0,1,1}] = v[3]*pp*(-2*p*v[0]*v[1]*v[2]+pp*v[0]*v[1]*v[2]+p*v[1]*v[2]-pp*v[1]*v[2]+v[0]*v[1]*v[2]+p*v[2]-1)/denominator;
@@ -317,6 +323,7 @@ namespace Fisher {
 		calc->Q[{1,1,1,0}] = -ppp*v[1]*v[2]*v[3]*(-1+v[0])*(p-1)/denominator;
 		calc->Q[{1,1,1,1}] = v[1]*v[2]*v[3]*pppp*(-1+v[0])/denominator;
 
+		calc->P.rehash( 16 );
 		calc->P[{0,0,0,0}] = v[0]*v[1]*v[2]*v[3]*(p-1)*(p-1)*(p-1)*(p-1)/denominator;
 		calc->P[{0,0,0,1}] = -v[0]*v[1]*v[2]*v[3]*p*(p-1)*(p-1)*(p-1)/denominator;
 		calc->P[{0,0,1,0}] = -v[0]*v[1]*v[2]*v[3]*p*(p-1)*(p-1)*(p-1)/denominator;
@@ -336,6 +343,7 @@ namespace Fisher {
 
 		denominator *=  denominator;
 
+		calc->dQ_dlambda.rehash( 15 );
 		calc->dQ_dlambda[{0,0,0,1}] = p*v[3]*(3*p*T[0]*v[0]*v[1]*v[2]+3*p*T[1]*v[0]*v[1]*v[2]+3*p*T[2]*v[0]*v[1]*v[2]+3*p*T[3]*v[0]*v[1]*v[2]-3*pp*T[0]*v[0]*v[1]*v[2]-3*pp*T[1]*v[0]*v[1]*v[2]-3*pp*T[2]*v[0]*v[1]*v[2]-3*pp*T[3]*v[0]*v[1]*v[2]+ppp*T[0]*v[0]*v[1]*v[2]+ppp*T[1]*v[0]*v[1]*v[2]+ppp*T[2]*v[0]*v[1]*v[2]+ppp*T[3]*v[0]*v[1]*v[2]-p*T[1]*v[1]*v[2]-p*T[2]*v[1]*v[2]-p*T[3]*v[1]*v[2]+2*pp*T[1]*v[1]*v[2]+2*pp*T[2]*v[1]*v[2]+2*pp*T[3]*v[1]*v[2]-ppp*T[1]*v[1]*v[2]-ppp*T[2]*v[1]*v[2]-ppp*T[3]*v[1]*v[2]-T[0]*v[0]*v[1]*v[2]-T[1]*v[0]*v[1]*v[2]-T[2]*v[0]*v[1]*v[2]-T[3]*v[0]*v[1]*v[2]-p*T[2]*v[2]-p*T[3]*v[2]+pp*T[2]*v[2]+pp*T[3]*v[2]-p*T[3])/denominator;
 		calc->dQ_dlambda[{0,0,1,0}] = -p*v[3]*(p-1)*(3*p*T[0]*v[0]*v[1]*v[2]*v[3]+3*p*T[1]*v[0]*v[1]*v[2]*v[3]+3*p*T[2]*v[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[0]*v[1]*v[2]*v[3]-3*pp*T[1]*v[0]*v[1]*v[2]*v[3]-3*pp*T[2]*v[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[0]*v[1]*v[2]*v[3]+ppp*T[1]*v[0]*v[1]*v[2]*v[3]+ppp*T[2]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[1]*v[2]-p*T[1]*v[0]*v[1]*v[2]-p*T[1]*v[1]*v[2]*v[3]-p*T[2]*v[0]*v[1]*v[2]-p*T[2]*v[1]*v[2]*v[3]-p*T[3]*v[0]*v[1]*v[2]+2*pp*T[0]*v[0]*v[1]*v[2]+2*pp*T[1]*v[0]*v[1]*v[2]+2*pp*T[1]*v[1]*v[2]*v[3]+2*pp*T[2]*v[0]*v[1]*v[2]+2*pp*T[2]*v[1]*v[2]*v[3]+2*pp*T[3]*v[0]*v[1]*v[2]-ppp*T[0]*v[0]*v[1]*v[2]-ppp*T[1]*v[0]*v[1]*v[2]-ppp*T[1]*v[1]*v[2]*v[3]-ppp*T[2]*v[0]*v[1]*v[2]-ppp*T[2]*v[1]*v[2]*v[3]-ppp*T[3]*v[0]*v[1]*v[2]-T[0]*v[0]*v[1]*v[2]*v[3]-T[1]*v[0]*v[1]*v[2]*v[3]-T[2]*v[0]*v[1]*v[2]*v[3]-p*T[2]*v[2]*v[3]-pp*T[1]*v[1]*v[2]-pp*T[2]*v[1]*v[2]+pp*T[2]*v[2]*v[3]-pp*T[3]*v[1]*v[2]+ppp*T[1]*v[1]*v[2]+ppp*T[2]*v[1]*v[2]+ppp*T[3]*v[1]*v[2]-pp*T[2]*v[2]-pp*T[3]*v[2]+p*T[3])/denominator;
 		calc->dQ_dlambda[{0,0,1,1}] = v[3]*pp*(3*p*T[0]*v[0]*v[1]*v[2]*v[3]+3*p*T[1]*v[0]*v[1]*v[2]*v[3]+3*p*T[2]*v[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[0]*v[1]*v[2]*v[3]-3*pp*T[1]*v[0]*v[1]*v[2]*v[3]-3*pp*T[2]*v[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[0]*v[1]*v[2]*v[3]+ppp*T[1]*v[0]*v[1]*v[2]*v[3]+ppp*T[2]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[1]*v[2]-p*T[1]*v[0]*v[1]*v[2]-p*T[1]*v[1]*v[2]*v[3]-p*T[2]*v[0]*v[1]*v[2]-p*T[2]*v[1]*v[2]*v[3]-p*T[3]*v[0]*v[1]*v[2]+2*pp*T[0]*v[0]*v[1]*v[2]+2*pp*T[1]*v[0]*v[1]*v[2]+2*pp*T[1]*v[1]*v[2]*v[3]+2*pp*T[2]*v[0]*v[1]*v[2]+2*pp*T[2]*v[1]*v[2]*v[3]+2*pp*T[3]*v[0]*v[1]*v[2]-ppp*T[0]*v[0]*v[1]*v[2]-ppp*T[1]*v[0]*v[1]*v[2]-ppp*T[1]*v[1]*v[2]*v[3]-ppp*T[2]*v[0]*v[1]*v[2]-ppp*T[2]*v[1]*v[2]*v[3]-ppp*T[3]*v[0]*v[1]*v[2]-T[0]*v[0]*v[1]*v[2]*v[3]-T[1]*v[0]*v[1]*v[2]*v[3]-T[2]*v[0]*v[1]*v[2]*v[3]-p*T[2]*v[2]*v[3]-pp*T[1]*v[1]*v[2]-pp*T[2]*v[1]*v[2]+pp*T[2]*v[2]*v[3]-pp*T[3]*v[1]*v[2]+ppp*T[1]*v[1]*v[2]+ppp*T[2]*v[1]*v[2]+ppp*T[3]*v[1]*v[2]-pp*T[2]*v[2]-pp*T[3]*v[2]+p*T[3])/denominator;
@@ -352,6 +360,7 @@ namespace Fisher {
 		calc->dQ_dlambda[{1,1,1,0}] = -ppp*v[1]*v[2]*v[3]*(p-1)*(3*p*T[0]*v[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[2]*v[3]-p*T[1]*v[0]*v[2]*v[3]+2*pp*T[0]*v[0]*v[2]*v[3]+2*pp*T[1]*v[0]*v[2]*v[3]-ppp*T[0]*v[0]*v[2]*v[3]-ppp*T[1]*v[0]*v[2]*v[3]-T[0]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[3]-p*T[1]*v[0]*v[3]+p*T[1]*v[2]*v[3]-p*T[2]*v[0]*v[3]+pp*T[0]*v[0]*v[3]+pp*T[1]*v[0]*v[3]-2*pp*T[1]*v[2]*v[3]+pp*T[2]*v[0]*v[3]+ppp*T[1]*v[2]*v[3]-p*T[0]*v[0]-p*T[1]*v[0]+p*T[1]*v[3]-p*T[2]*v[0]+p*T[2]*v[3]-p*T[3]*v[0]-pp*T[1]*v[3]-pp*T[2]*v[3]+p*T[1]+p*T[2]+p*T[3])/denominator;
 		calc->dQ_dlambda[{1,1,1,1}] = v[1]*v[2]*v[3]*pppp*(3*p*T[0]*v[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[2]*v[3]-p*T[1]*v[0]*v[2]*v[3]+2*pp*T[0]*v[0]*v[2]*v[3]+2*pp*T[1]*v[0]*v[2]*v[3]-ppp*T[0]*v[0]*v[2]*v[3]-ppp*T[1]*v[0]*v[2]*v[3]-T[0]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[3]-p*T[1]*v[0]*v[3]+p*T[1]*v[2]*v[3]-p*T[2]*v[0]*v[3]+pp*T[0]*v[0]*v[3]+pp*T[1]*v[0]*v[3]-2*pp*T[1]*v[2]*v[3]+pp*T[2]*v[0]*v[3]+ppp*T[1]*v[2]*v[3]-p*T[0]*v[0]-p*T[1]*v[0]+p*T[1]*v[3]-p*T[2]*v[0]+p*T[2]*v[3]-p*T[3]*v[0]-pp*T[1]*v[3]-pp*T[2]*v[3]+p*T[1]+p*T[2]+p*T[3])/denominator;
 
+		calc->dP_dlambda.rehash( 16 );
 		calc->dP_dlambda[{0,0,0,0}] = v[0]*v[1]*v[2]*v[3]*(p-1)*(p-1)*(p-1)*(p-1)*p*(3*p*T[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[1]*v[2]*v[3]+2*p*T[0]*v[2]*v[3]+2*p*T[1]*v[2]*v[3]-pp*T[0]*v[2]*v[3]-pp*T[1]*v[2]*v[3]-T[0]*v[1]*v[2]*v[3]+p*T[0]*v[3]+p*T[1]*v[3]+p*T[2]*v[3]-T[0]*v[2]*v[3]-T[1]*v[2]*v[3]-T[0]*v[3]-T[1]*v[3]-T[2]*v[3]-T[0]-T[1]-T[2]-T[3])/denominator;
 		calc->dP_dlambda[{0,0,0,1}] = -v[0]*v[1]*v[2]*v[3]*pp*(p-1)*(p-1)*(p-1)*(3*p*T[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[1]*v[2]*v[3]+2*p*T[0]*v[2]*v[3]+2*p*T[1]*v[2]*v[3]-pp*T[0]*v[2]*v[3]-pp*T[1]*v[2]*v[3]-T[0]*v[1]*v[2]*v[3]+p*T[0]*v[3]+p*T[1]*v[3]+p*T[2]*v[3]-T[0]*v[2]*v[3]-T[1]*v[2]*v[3]-T[0]*v[3]-T[1]*v[3]-T[2]*v[3]-T[0]-T[1]-T[2]-T[3])/denominator;
 		calc->dP_dlambda[{0,0,1,0}] = -v[0]*v[1]*v[2]*v[3]*pp*(p-1)*(p-1)*(p-1)*(3*p*T[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[1]*v[2]*v[3]+2*p*T[0]*v[2]*v[3]+2*p*T[1]*v[2]*v[3]-pp*T[0]*v[2]*v[3]-pp*T[1]*v[2]*v[3]-T[0]*v[1]*v[2]*v[3]+p*T[0]*v[3]+p*T[1]*v[3]+p*T[2]*v[3]-T[0]*v[2]*v[3]-T[1]*v[2]*v[3]-T[0]*v[3]-T[1]*v[3]-T[2]*v[3]-T[0]-T[1]-T[2]-T[3])/denominator;
@@ -373,59 +382,73 @@ namespace Fisher {
 	// Calculator::operator( )
 	template< std::size_t D, typename real_approx_t >
 	real_approx_t Calculator<D,real_approx_t>::operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda ) {
+
+		// Pre calculation
 		PreCalculator<D>::preCalculate( this, t, p, lambda );
 
-		// For slice from 1 while precision not exhausted ...
+		// Reset the current slice to 0.
+		slice = 0;
+
+		// Initialise 
 		real_approx_t fisherInformation = static_cast<real_approx_t>(0);
 		real_approx_t runningTotal = static_cast<real_approx_t>(-1);
 
-		for( size_t s = 0; fisherInformation != runningTotal; ++s ) {
+		// Compute the slice delta.
+		while( fisherInformation != runningTotal ) {
 			runningTotal = fisherInformation;
-			fisherInformation = runningTotal + calculateSlice( s );
+			fisherInformation = runningTotal + calculateSlice( );
 		}
 
 		return fisherInformation;
 	}
 
-	// Calculator::calculateSlice( )
+	// Calculator::initialiseSlice( )
 	template< std::size_t D, typename real_approx_t >
-	real_approx_t Calculator<D,real_approx_t>::calculateSlice( size_t s )  {
+	void Calculator<D,real_approx_t>::initialiseSlice( ) {
 
 		// Remove slice that is no longer needed.
-		L.eraseSlice( s-(D+1) );
-		dL_dlambda.eraseSlice( s-(D+1) );
+		L.eraseSlice( slice-(D+1) );
+		dL_dlambda.eraseSlice( slice-(D+1) );
 
 		// Insert new slice. (This should have no effect on already existing slices).
-		auto numIndices = L.insertSlice( s );
-		dL_dlambda.insertSlice( s );
+		L.insertSlice( slice );
+		dL_dlambda.insertSlice( slice );
 
 		// Generate indices for new siice.
-		waitingIndices.resize( numIndices );
-		generateSliceIndices( s );
-		
+		waitingIndices.resize( L.getSlice(slice).size() );
+		generateSliceIndices( );
+
+		// Increment the slice ready for the next iteration.		
+		++slice;
+	}
+
+	// Calculator::calculateSlice( )
+	template< std::size_t D, typename real_approx_t >
+	real_approx_t Calculator<D,real_approx_t>::calculateSlice( )  {
+
+		// Initialise the new slice for computation
+		initialiseSlice( );
+
 		// Calculate the Fisher Information delta for this slice by accumulating the delta for each index.
-		// Note that the calculateIndex( ) function appends the values into L and dL_dlambda, so we don't need to do so here.
-		real_approx_t runningTotal = static_cast<real_approx_t>( 0 );
-		while( ! waitingIndices.empty() ) {
-			runningTotal += calculateIndex( waitingIndices.front() );
-			waitingIndices.pop_front( );
-		}
-		return runningTotal;
+		real_approx_t sliceDelta = static_cast<real_approx_t>( 0 );
+		for( auto idx : waitingIndices ) sliceDelta += calculateIndex( idx );
+
+		return sliceDelta;
 	}
 
 	// Calculator::generateSliceIndices
 	template< std::size_t D, typename real_approx_t >
-	void Calculator<D,real_approx_t>::generateSliceIndices( const size_t s, typename std::deque<idx_t>::iterator &currentIdx, size_t pos, unsigned int culm )  {
+	void Calculator<D,real_approx_t>::generateSliceIndices( typename std::deque<idx_t>::iterator &currentIdx, size_t pos, unsigned int culm )  {
 		
 		if( pos < D - 2 ) {
-			for( unsigned int i = 0; i <= s - culm; ++i ) {
+			for( unsigned int i = 0; i <= slice - culm; ++i ) {
 				(*currentIdx)[pos] = i;
-				generateSliceIndices( s, currentIdx, pos+1, culm + i );
+				generateSliceIndices( currentIdx, pos+1, culm + i );
 			}
 		} else {
-			for( unsigned int i = 0; i <= s - culm; ++i ) {
+			for( unsigned int i = 0; i <= slice - culm; ++i ) {
 				(*currentIdx)[pos] = i;
-				(*currentIdx)[pos+1] = s - culm - i;
+				(*currentIdx)[pos+1] = slice - culm - i;
 				++currentIdx;
 				if( currentIdx != waitingIndices.end() ) (*currentIdx) = *(currentIdx-1);
 			}
@@ -509,21 +532,12 @@ namespace Fisher {
 
 	// ThreadedCalculator::calculateSlice( )
 	template< std::size_t D, typename real_approx_t >
-	real_approx_t ThreadedCalculator<D,real_approx_t>::calculateSlice( size_t s )  {
+	real_approx_t ThreadedCalculator<D,real_approx_t>::calculateSlice( )  {
 
 		using calc = Calculator<D,real_approx_t>;
 
-		// Remove slice that is no longer needed.
-		calc::L.eraseSlice( s-(D+1) );
-		calc::dL_dlambda.eraseSlice( s-(D+1) );
-
-		// Insert new slice. (This should have no effect on already existing slices).
-		auto numIndices = calc::L.insertSlice( s );
-		calc::dL_dlambda.insertSlice( s );
-
-		// Generate indices for new siice as an asynchronous task.
-		calc::waitingIndices.resize( numIndices );
-		calc::generateSliceIndices( s );
+		// Initialise the slice
+		calc::initialiseSlice( );
 
 		// Initialise the delta value for this slice.
 		sliceDelta = static_cast<real_approx_t>(0);
