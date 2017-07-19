@@ -1,6 +1,6 @@
 #include <array>
 #include <unordered_map>
-#include <forward_list>
+#include <deque>
 #include <string>
 #include <bitset>
 #include <boost/dynamic_bitset.hpp>
@@ -68,7 +68,7 @@ namespace Fisher {
 			real_approx_t& operator[] ( const idx_t& idx ) { auto s = sliceId(idx); return data.at( s )[ IdxPos::calculate(idx, s) ]; }
 			real_approx_t& at( const idx_t& idx ) { auto s = sliceId(idx); return data.at( s ).at( IdxPos::calculate(idx, s) ); }
 
-			void insertSlice( size_t s );
+			size_t insertSlice( size_t s );
 			size_type eraseSlice( size_t s ) { return data.erase( s ); }
 			void clear( ) noexcept { data.clear( ); }
 
@@ -104,8 +104,8 @@ namespace Fisher {
 			SliceContainer<D,real_approx_t> L, dL_dlambda;
 			std::unordered_map<idx_t,real_approx_t> Q, dQ_dlambda, P, dP_dlambda; // Maybe make these map<idx_t,real_approx_t> instead of unordered_map, since they are being iterated over, but that means writing a compaitor class.
 
-			std::forward_list<idx_t> waitingIndices;
-			void generateSliceIndices( const size_t, size_t = 0, unsigned int = 0 );
+			std::deque<idx_t> waitingIndices;
+			void generateSliceIndices( const size_t s ) { auto it = waitingIndices.begin(); generateSliceIndices( s, it, 0, 0 ); }
 
 			virtual real_approx_t calculateSlice( size_t );
 			virtual real_approx_t calculateIndex( const idx_t& );
@@ -113,6 +113,7 @@ namespace Fisher {
 		private:
 			friend class PreCalculator<D>;
 
+			void generateSliceIndices( const size_t, typename std::deque<idx_t>::iterator&, size_t, unsigned int );
 			size_t slice; // Currently computing slice. (May not be needed)
 			real_approx_t total;
 
@@ -170,10 +171,13 @@ namespace Fisher {
 
 
 	template< std::size_t D, typename real_approx_t >
-	void SliceContainer<D,real_approx_t>::insertSlice( size_t s ) { 
+	size_t SliceContainer<D,real_approx_t>::insertSlice( size_t s ) { 
 		constexpr auto C = boost::math::binomial_coefficient<double>;
 
-		data.emplace( s, C(s+D-1, s) );
+		auto numIndices = C( s+D-1, s );
+		data.emplace( s, numIndices );
+
+		return numIndices;
 	}
 
 	// PreCalculator::preCalculate( )
@@ -392,11 +396,11 @@ namespace Fisher {
 		dL_dlambda.eraseSlice( s-(D+1) );
 
 		// Insert new slice. (This should have no effect on already existing slices).
-		L.insertSlice( s );
+		auto numIndices = L.insertSlice( s );
 		dL_dlambda.insertSlice( s );
 
 		// Generate indices for new siice.
-		waitingIndices.clear( );
+		waitingIndices.resize( numIndices );
 		generateSliceIndices( s );
 		
 		// Calculate the Fisher Information delta for this slice by accumulating the delta for each index.
@@ -411,24 +415,22 @@ namespace Fisher {
 
 	// Calculator::generateSliceIndices
 	template< std::size_t D, typename real_approx_t >
-	void Calculator<D,real_approx_t>::generateSliceIndices( const size_t s, size_t pos, unsigned int culm )  {
+	void Calculator<D,real_approx_t>::generateSliceIndices( const size_t s, typename std::deque<idx_t>::iterator &currentIdx, size_t pos, unsigned int culm )  {
 		
-		if( pos == 0 ) waitingIndices.emplace_front( );
-
 		if( pos < D - 2 ) {
 			for( unsigned int i = 0; i <= s - culm; ++i ) {
-				waitingIndices.front()[pos] = i;
-				generateSliceIndices( s, pos+1, culm + i );
+				(*currentIdx)[pos] = i;
+				generateSliceIndices( s, currentIdx, pos+1, culm + i );
 			}
 		} else {
 			for( unsigned int i = 0; i <= s - culm; ++i ) {
-				waitingIndices.front()[pos] = i;
-				waitingIndices.front()[pos+1] = s - culm - i;
-				waitingIndices.emplace_front( waitingIndices.front() );
+				(*currentIdx)[pos] = i;
+				(*currentIdx)[pos+1] = s - culm - i;
+				++currentIdx;
+				if( currentIdx != waitingIndices.end() ) (*currentIdx) = *(currentIdx-1);
 			}
 		}
 
-		if( pos == 0 ) waitingIndices.pop_front( ); // There will be an extra, unused index to be removed.
 	}
 
 	// Calculator::calculateIndex( )
@@ -516,11 +518,11 @@ namespace Fisher {
 		calc::dL_dlambda.eraseSlice( s-(D+1) );
 
 		// Insert new slice. (This should have no effect on already existing slices).
-		calc::L.insertSlice( s );
+		auto numIndices = calc::L.insertSlice( s );
 		calc::dL_dlambda.insertSlice( s );
 
 		// Generate indices for new siice as an asynchronous task.
-		calc::waitingIndices.clear( );
+		calc::waitingIndices.resize( numIndices );
 		calc::generateSliceIndices( s );
 
 		// Initialise the delta value for this slice.
@@ -610,16 +612,9 @@ namespace Fisher {
 			// Initialise local slice sub total.
 			localTotal = static_cast<real_approx_t>(0);
 
-// ***** CHANGE THIS TO USE A DEQUE INSTEAD OF A LIST *******
-
 			// Calculate the slice stride delta.
-			auto idxIt = calc::waitingIndices.cbegin();
-			for( auto i = 0; (i < ID) && (idxIt != calc::waitingIndices.cend()); ++i) ++idxIt;
-
-			while( idxIt != calc::waitingIndices.cend() ) {
-				localTotal += calc::calculateIndex( *idxIt );
-
-				for( auto i = 0; (i < numThreads) && (idxIt != calc::waitingIndices.cend()); ++i ) ++idxIt;
+			for( auto i = ID; i < calc::waitingIndices.size(); i += numThreads ) {
+				localTotal += calc::calculateIndex( calc::waitingIndices[i] );
 			}
 
 			// Update the global slice delta.
