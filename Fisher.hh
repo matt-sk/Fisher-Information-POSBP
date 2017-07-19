@@ -330,6 +330,8 @@ namespace Fisher {
 		calc->P[{1,1,1,0}] = -v[0]*v[1]*v[2]*v[3]*ppp*(p-1)/denominator;
 		calc->P[{1,1,1,1}] = pppp*v[0]*v[1]*v[2]*v[3]/denominator;
 
+		denominator *=  denominator;
+
 		calc->dQ_dlambda[{0,0,0,1}] = p*v[3]*(3*p*T[0]*v[0]*v[1]*v[2]+3*p*T[1]*v[0]*v[1]*v[2]+3*p*T[2]*v[0]*v[1]*v[2]+3*p*T[3]*v[0]*v[1]*v[2]-3*pp*T[0]*v[0]*v[1]*v[2]-3*pp*T[1]*v[0]*v[1]*v[2]-3*pp*T[2]*v[0]*v[1]*v[2]-3*pp*T[3]*v[0]*v[1]*v[2]+ppp*T[0]*v[0]*v[1]*v[2]+ppp*T[1]*v[0]*v[1]*v[2]+ppp*T[2]*v[0]*v[1]*v[2]+ppp*T[3]*v[0]*v[1]*v[2]-p*T[1]*v[1]*v[2]-p*T[2]*v[1]*v[2]-p*T[3]*v[1]*v[2]+2*pp*T[1]*v[1]*v[2]+2*pp*T[2]*v[1]*v[2]+2*pp*T[3]*v[1]*v[2]-ppp*T[1]*v[1]*v[2]-ppp*T[2]*v[1]*v[2]-ppp*T[3]*v[1]*v[2]-T[0]*v[0]*v[1]*v[2]-T[1]*v[0]*v[1]*v[2]-T[2]*v[0]*v[1]*v[2]-T[3]*v[0]*v[1]*v[2]-p*T[2]*v[2]-p*T[3]*v[2]+pp*T[2]*v[2]+pp*T[3]*v[2]-p*T[3])/denominator;
 		calc->dQ_dlambda[{0,0,1,0}] = -p*v[3]*(p-1)*(3*p*T[0]*v[0]*v[1]*v[2]*v[3]+3*p*T[1]*v[0]*v[1]*v[2]*v[3]+3*p*T[2]*v[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[0]*v[1]*v[2]*v[3]-3*pp*T[1]*v[0]*v[1]*v[2]*v[3]-3*pp*T[2]*v[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[0]*v[1]*v[2]*v[3]+ppp*T[1]*v[0]*v[1]*v[2]*v[3]+ppp*T[2]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[1]*v[2]-p*T[1]*v[0]*v[1]*v[2]-p*T[1]*v[1]*v[2]*v[3]-p*T[2]*v[0]*v[1]*v[2]-p*T[2]*v[1]*v[2]*v[3]-p*T[3]*v[0]*v[1]*v[2]+2*pp*T[0]*v[0]*v[1]*v[2]+2*pp*T[1]*v[0]*v[1]*v[2]+2*pp*T[1]*v[1]*v[2]*v[3]+2*pp*T[2]*v[0]*v[1]*v[2]+2*pp*T[2]*v[1]*v[2]*v[3]+2*pp*T[3]*v[0]*v[1]*v[2]-ppp*T[0]*v[0]*v[1]*v[2]-ppp*T[1]*v[0]*v[1]*v[2]-ppp*T[1]*v[1]*v[2]*v[3]-ppp*T[2]*v[0]*v[1]*v[2]-ppp*T[2]*v[1]*v[2]*v[3]-ppp*T[3]*v[0]*v[1]*v[2]-T[0]*v[0]*v[1]*v[2]*v[3]-T[1]*v[0]*v[1]*v[2]*v[3]-T[2]*v[0]*v[1]*v[2]*v[3]-p*T[2]*v[2]*v[3]-pp*T[1]*v[1]*v[2]-pp*T[2]*v[1]*v[2]+pp*T[2]*v[2]*v[3]-pp*T[3]*v[1]*v[2]+ppp*T[1]*v[1]*v[2]+ppp*T[2]*v[1]*v[2]+ppp*T[3]*v[1]*v[2]-pp*T[2]*v[2]-pp*T[3]*v[2]+p*T[3])/denominator;
 		calc->dQ_dlambda[{0,0,1,1}] = v[3]*pp*(3*p*T[0]*v[0]*v[1]*v[2]*v[3]+3*p*T[1]*v[0]*v[1]*v[2]*v[3]+3*p*T[2]*v[0]*v[1]*v[2]*v[3]-3*pp*T[0]*v[0]*v[1]*v[2]*v[3]-3*pp*T[1]*v[0]*v[1]*v[2]*v[3]-3*pp*T[2]*v[0]*v[1]*v[2]*v[3]+ppp*T[0]*v[0]*v[1]*v[2]*v[3]+ppp*T[1]*v[0]*v[1]*v[2]*v[3]+ppp*T[2]*v[0]*v[1]*v[2]*v[3]-p*T[0]*v[0]*v[1]*v[2]-p*T[1]*v[0]*v[1]*v[2]-p*T[1]*v[1]*v[2]*v[3]-p*T[2]*v[0]*v[1]*v[2]-p*T[2]*v[1]*v[2]*v[3]-p*T[3]*v[0]*v[1]*v[2]+2*pp*T[0]*v[0]*v[1]*v[2]+2*pp*T[1]*v[0]*v[1]*v[2]+2*pp*T[1]*v[1]*v[2]*v[3]+2*pp*T[2]*v[0]*v[1]*v[2]+2*pp*T[2]*v[1]*v[2]*v[3]+2*pp*T[3]*v[0]*v[1]*v[2]-ppp*T[0]*v[0]*v[1]*v[2]-ppp*T[1]*v[0]*v[1]*v[2]-ppp*T[1]*v[1]*v[2]*v[3]-ppp*T[2]*v[0]*v[1]*v[2]-ppp*T[2]*v[1]*v[2]*v[3]-ppp*T[3]*v[0]*v[1]*v[2]-T[0]*v[0]*v[1]*v[2]*v[3]-T[1]*v[0]*v[1]*v[2]*v[3]-T[2]*v[0]*v[1]*v[2]*v[3]-p*T[2]*v[2]*v[3]-pp*T[1]*v[1]*v[2]-pp*T[2]*v[1]*v[2]+pp*T[2]*v[2]*v[3]-pp*T[3]*v[1]*v[2]+ppp*T[1]*v[1]*v[2]+ppp*T[2]*v[1]*v[2]+ppp*T[3]*v[1]*v[2]-pp*T[2]*v[2]-pp*T[3]*v[2]+p*T[3])/denominator;
@@ -439,8 +441,8 @@ namespace Fisher {
 		real_approx_t LI, dLI_dlambda;
 
 		LI = dLI_dlambda = ZERO;
-		{ auto it = P.find( idx ); if( it != P.end() ) LI = it->second; }
-		{ auto it = dP_dlambda.find( idx ); if( it != dP_dlambda.end() ) dLI_dlambda = it->second; }
+		{ auto it = P.find( idx ); if( it != P.cend() ) LI = it->second; }
+		{ auto it = dP_dlambda.find( idx ); if( it != dP_dlambda.cend() ) dLI_dlambda = it->second; }
 
 		// For each q[i,j], we calculate q[i,j, ...]*L[a-i, b-j, ...], skipping cases where any of the a-i, b-j, ... are less than zero.
 		for( auto&& q : Q ) {
