@@ -3,6 +3,7 @@
 #include <forward_list>
 #include <string>
 #include <bitset>
+#include <boost/dynamic_bitset.hpp>
 
 #include <thread>
 #include <future>
@@ -138,7 +139,7 @@ namespace Fisher {
 			
 			std::mutex mtx;
 			std::condition_variable workerThreadWakeCond, workerThreadSliceCompletedCond;
-			std::bitset<64> workerThreadCompleteFlags;
+			boost::dynamic_bitset<> workerThreadCompleteFlags;
 			std::vector<std::thread> workerThreads;
 	};
 
@@ -172,7 +173,7 @@ namespace Fisher {
 	void SliceContainer<D,real_approx_t>::insertSlice( size_t s ) { 
 		constexpr auto C = boost::math::binomial_coefficient<double>;
 
-		data.emplace( s, C(s + D - 1, s) );
+		data.emplace( s, C(s+D-1, s) );
 	}
 
 	// PreCalculator::preCalculate( )
@@ -431,8 +432,6 @@ namespace Fisher {
 	// Calculator::calculateIndex( )
 	template< std::size_t D, typename real_approx_t >
 	real_approx_t Calculator<D,real_approx_t>::calculateIndex( const idx_t& idx ) {
-		// auto LI = L[idx];
-		// auto dLI_dlambda = dL_dlambda[idx]; // If we use this method, then we save a lookup on [idx], but we need to handle the cases where the initialisation should be 0.
 
 		constexpr auto ZERO = static_cast<real_approx_t>(0);
 
@@ -470,7 +469,7 @@ namespace Fisher {
 	// ThreadedCalculator::ThreadedCalculator( )
 	template< std::size_t D, typename real_approx_t >
 	ThreadedCalculator<D,real_approx_t>::ThreadedCalculator( size_t numThreads ) 
-		: workerThreadTerminateFlag( false )
+		: workerThreadCompleteFlags( numThreads ), workerThreadTerminateFlag( false )
 	{ 
 
 		constexpr auto threadLoopFn = &ThreadedCalculator<D,real_approx_t>::indexCalculatorLoop;
@@ -483,7 +482,7 @@ namespace Fisher {
 		// Wait for workers to finish initial setup.
 		{
 			std::unique_lock<std::mutex> lck( mtx );
-			workerThreadSliceCompletedCond.wait( lck, [this]{ return workerThreadCompleteFlags.count() == workerThreads.size(); } );
+			workerThreadSliceCompletedCond.wait( lck, [this]{ return workerThreadCompleteFlags.all(); } );
 		}
 
 	}
@@ -534,7 +533,7 @@ namespace Fisher {
 		// Wait for workers to finish.
 		{
 			std::unique_lock<std::mutex> lck( mtx );
-			workerThreadSliceCompletedCond.wait( lck, [this]{ return workerThreadCompleteFlags.count() == workerThreads.size(); } );
+			workerThreadSliceCompletedCond.wait( lck, [this]{ return workerThreadCompleteFlags.all(); } );
 		}
 
 		// sliceDelta is automatically accumulated by the indexCalculatorLoop( ) threads.
