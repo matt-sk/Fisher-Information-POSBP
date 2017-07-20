@@ -1,8 +1,6 @@
 #include <array>
 #include <unordered_map>
 #include <deque>
-#include <string>
-#include <bitset>
 #include <boost/dynamic_bitset.hpp>
 
 #include <thread>
@@ -92,7 +90,7 @@ namespace Fisher {
 		public:
 			Calculator( ) { }
 
-			real_approx_t operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda );
+			virtual real_approx_t operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda );
 
 		protected:
 			using idx_t = typename SliceContainer<D,real_approx_t>::idx_t;
@@ -125,12 +123,13 @@ namespace Fisher {
 			ThreadedCalculator( size_t numThreads = 0 );
 			virtual ~ThreadedCalculator( );
 
+			virtual real_approx_t operator() ( const std::array<real_approx_t,D>&, const real_approx_t, const real_approx_t );
+
 		private:
 
 			using idx_t = typename Calculator<D,real_approx_t>::idx_t;
 			using slice_t = typename Calculator<D,real_approx_t>::slice_t;
 
-			// virtual void generateSliceIndices( ) { Calculator<D,real_approx_t>::generateSliceIndices(); }
 			virtual real_approx_t calculateSlice( );
 
 			void indexCalculatorLoop( size_t, size_t );
@@ -142,6 +141,7 @@ namespace Fisher {
 			std::condition_variable workerThreadWakeCond, workerThreadSliceCompletedCond;
 			boost::dynamic_bitset<> workerThreadCompleteFlags;
 			std::vector<std::thread> workerThreads;
+			std::future<void> sliceInitTask;
 	};
 
 	// -= =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= =-
@@ -150,22 +150,22 @@ namespace Fisher {
 
 	// FUnctions to calculate the index of a given index within a slice.
 	template< > 
-	size_t IdxPos::calculate<1>( const std::array<unsigned int,1>& idx, size_t s) { 
+	size_t IdxPos::calculate<1>( const std::array<unsigned int,1>& idx, size_t s ) { 
 		return 0;
 	}
 
 	template< > 
-	size_t IdxPos::calculate<2>( const std::array<unsigned int,2>& idx, size_t s) { 
+	size_t IdxPos::calculate<2>( const std::array<unsigned int,2>& idx, size_t s ) { 
 		return idx[0];
 	}
 
 	template< > 
-	size_t IdxPos::calculate<3>( const std::array<unsigned int,3>& idx, size_t s) { 
+	size_t IdxPos::calculate<3>( const std::array<unsigned int,3>& idx, size_t s ) { 
 		return (idx[0]*(2*s-idx[0]+3))/2 + idx[1];
 	}
 
 	template< > 
-	size_t IdxPos::calculate<4>( const std::array<unsigned int,4>& idx, size_t s) { 
+	size_t IdxPos::calculate<4>( const std::array<unsigned int,4>& idx, size_t s ) { 
 		return (idx[0]*(3*s*(s-idx[0]+4)+idx[0]*idx[0]+11-6*idx[0]))/6 + (idx[1]*(2*(s-idx[0])-idx[1]+3))/2 + idx[2];
 	}
 
@@ -192,6 +192,9 @@ namespace Fisher {
 		calc->dQ_dlambda.clear( );
 		calc->P.clear( );
 		calc->dP_dlambda.clear( );
+
+		calc->slice = 0;
+
 
 		// Initial calcualtions to turn t[], p, and lambda from our intput into T[] and v[] needed for the pre-calculated polynoials.
 		// T[i] := t[i]-t[i-1] with the understandign that t[-1]=0, and v[i] := e^(-lambda*T[i])
@@ -386,9 +389,6 @@ namespace Fisher {
 		// Pre calculation
 		PreCalculator<D>::preCalculate( this, t, p, lambda );
 
-		// Reset the current slice to 0.
-		slice = 0;
-
 		// Initialise 
 		real_approx_t fisherInformation = static_cast<real_approx_t>(0);
 		real_approx_t runningTotal = static_cast<real_approx_t>(-1);
@@ -529,6 +529,16 @@ namespace Fisher {
 		}
 	}
 
+	template< std::size_t D, typename real_approx_t >
+	real_approx_t ThreadedCalculator<D,real_approx_t>::operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda ) {
+		// Initialise the first slice asynchronously. (Note, parent class initialiseSlice() is called in the absense of a “local” initialiseSlice()).
+		// We use deferred (lazy) evaluation to make sure the computation initialisation happens before the first slice initialisation.
+		// We create the future now, becasue the computeSlice( ) function expects a future to wait on (which is usually launched asynchronously at the end of the previous computeSlice() call).
+		sliceInitTask = std::async( std::launch::deferred, [this]() { ThreadedCalculator<D,real_approx_t>::initialiseSlice(); } );
+
+		// Now we call the usual computation routines.
+		return Calculator<D,real_approx_t>::operator() ( t, p, lambda );
+	}
 
 	// ThreadedCalculator::calculateSlice( )
 	template< std::size_t D, typename real_approx_t >
@@ -536,14 +546,14 @@ namespace Fisher {
 
 		using calc = Calculator<D,real_approx_t>;
 
-		// Initialise the slice
-		calc::initialiseSlice( );
-
 		// Initialise the delta value for this slice.
 		sliceDelta = static_cast<real_approx_t>(0);
 
 		// Initialise the worker thread completion flags.
 		workerThreadCompleteFlags.reset();
+
+		// Wait for initialisation to complete.
+		sliceInitTask.wait();
 
 		// Notify workers to start working.
 		workerThreadWakeCond.notify_all();
@@ -554,50 +564,12 @@ namespace Fisher {
 			workerThreadSliceCompletedCond.wait( lck, [this]{ return workerThreadCompleteFlags.all(); } );
 		}
 
+		// Initialise the next slice asynchronously. (Note, parent class initialiseSlice() is called in the absense of a “local” initialiseSlice()).
+		sliceInitTask = std::async( std::launch::async, [this]() { ThreadedCalculator<D,real_approx_t>::initialiseSlice(); } );
+
 		// sliceDelta is automatically accumulated by the indexCalculatorLoop( ) threads.
 		return sliceDelta;
 	}
-
-	// template< std::size_t D, typename real_approx_t >
-	// void ThreadedCalculator<D,real_approx_t>::indexCalculatorLoop( size_t ID ) {
-
-	// 	using calc = Calculator<D,real_approx_t>;
-
-	// 	real_approx_t localTotal;
-
-	// 	std::unique_lock<std::mutex> lck( mtx ); // Lock is locked on construction.
-	// 	do {
-	// 		// (Re-) Initialise local Total.
-	// 		localTotal = static_cast<real_approx_t>(0);
-
-	// 		// Wait for a slice computation to start
-	// 		workerThreadWakeCond.wait( lck );
-
-	// 		while( ! calc::waitingIndices.empty() ) {
-	// 			// Get the first index.
-	// 			idx_t idx = std::move( calc::waitingIndices.front( ) );
-	// 			calc::waitingIndices.pop_front( );
-
-	// 			// We no longer need exclusive access, so release ownership of the mutex.
-	// 			lck.unlock( );
-
-	// 			// Calculate the Fisher information component from the index, adding it to our local total.
-	// 			localTotal += calc::calculateIndex( idx );
-	// 			// NOTE: calculateIndex will update L and dL_dlambda This /should/ be OK because each thread will be updating an entirely different memory area.
-	// 			// However, this may cause some problems with updating size/length variables.
-
-	// 			// Reaquire ownership of the mutex before checking emptiness again.
-	// 			lck.lock( );
-	// 		}
-
-	// 		// Update 
-	// 		sliceDelta += localTotal;
-	// 		workerThreadCompleteFlags.set( ID, true );
-
-	// 		workerThreadSliceCompletedCond.notify_all();
-	// 	} while( true );
-
-	// }
 
 	template< std::size_t D, typename real_approx_t >
 	void ThreadedCalculator<D,real_approx_t>::indexCalculatorLoop( size_t ID, size_t numThreads ) {
@@ -610,7 +582,7 @@ namespace Fisher {
 		do {
 
 			// Set the complete flag and notify completion. 
-			// Note that we use this mechanism to indicate initial setup as well as slice completion
+			// Note that we use this mechanism to indicate initial setup completion as well as slice completion
 			workerThreadCompleteFlags.set( ID, true );
 			workerThreadSliceCompletedCond.notify_all();
 
