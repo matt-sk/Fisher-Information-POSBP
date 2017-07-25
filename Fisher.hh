@@ -36,6 +36,14 @@ namespace std
 }
 
 namespace Fisher {
+	// -= =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= =-
+	//    Type alises.
+	// -= =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= =-
+	using idx_coord_t = unsigned int;
+
+	template< std::size_t D >
+	using index_t = std::array< idx_coord_t, D >;
+
 
 	// -= =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-= =-
 	//    Class Declarations
@@ -46,25 +54,66 @@ namespace Fisher {
 	template< std::size_t, typename > 
 	class Calculator;
 
+	template< std::size_t D >
+	class IndexGenerator {
+		public:
+			using idx_t = index_t<D>;
+			using size_type = typename std::deque<idx_t>::size_type;
+
+			IndexGenerator( ) : slice(0) { }
+
+			void generate( const size_t slice );
+			idx_t& operator[]( const size_t i ) { return indices[i]; }
+			idx_t& at( const size_t i ) { return indices.at(i); }
+
+			auto size() { return indices.size(); }
+
+		private:
+			size_t slice;
+			std::deque<idx_t> indices;
+
+			void generateSliceIndices( size_t, size_t );
+			typename std::deque<idx_t>::iterator currentGeneratingIndex;
+	};
+
+	template< >
+	class IndexGenerator<2> {
+		public:
+			using idx_t = index_t<2>;
+
+			IndexGenerator( ) : _slice(0), _size(0) { }
+
+			void generate( const size_t s )  { _slice = s; _size = s+1; } // Number of indices for slice s when n=2 is always s+1
+			idx_t operator[]( size_t i ) { return { static_cast<idx_coord_t>(i), static_cast<idx_coord_t>(_slice-i)}; }
+
+			size_t size() { return _size; }
+
+		private:
+			size_t _slice, _size;
+	};
+
 	struct IdxPos {
 		template< std::size_t D > 
-		static size_t calculate( const std::array<unsigned int,D>&, size_t );
+		static size_t calculate( const typename IndexGenerator<D>::idx_t&, size_t );
 	};
 
 	template< std::size_t D, typename real_approx_t=double > 
 	class SliceContainer { 
 		public: 
-			using idx_t = std::array< unsigned int, D >;
+			using idx_t = index_t<D>;
 			using slice_t = std::vector< real_approx_t >;
 			using size_type = typename std::unordered_map<size_t, slice_t>::size_type;
 
 			SliceContainer( ) { }
 
-			real_approx_t& operator[] ( const idx_t& idx ) { auto s = sliceId(idx); return data.at( s )[ IdxPos::calculate(idx, s) ]; }
-			real_approx_t& at( const idx_t& idx ) { auto s = sliceId(idx); return data.at( s ).at( IdxPos::calculate(idx, s) ); }
+			real_approx_t& operator[] ( const idx_t &idx ) { auto s = sliceId(idx); return data.at( s )[ IdxPos::calculate<D>(idx, s) ]; }
+			real_approx_t& at( const idx_t &idx ) { auto s = sliceId(idx); return data.at( s ).at( IdxPos::calculate<D>(idx, s) ); }
 
 			size_t insertSlice( size_t s );
 			size_type eraseSlice( size_t s ) { return data.erase( s ); }
+
+			template <class... Args> auto emplaceSlice ( Args&&... args ) { return data.emplace( args... ); };
+
 			void clear( ) noexcept { data.clear( ); }
 
 			slice_t & getSlice( size_t s ) { return data.at(s); }
@@ -99,22 +148,23 @@ namespace Fisher {
 			SliceContainer<D,real_approx_t> L, dL_dlambda;
 			std::unordered_map<idx_t,real_approx_t> Q, dQ_dlambda, P, dP_dlambda; // Maybe make these map<idx_t,real_approx_t> instead of unordered_map, since they are being iterated over, but that means writing a compaitor class.
 
-			std::deque<idx_t> waitingIndices;
+			// std::deque<idx_t> waitingIndices;
+			IndexGenerator<D> waitingIndices;
 
 			virtual void initialiseSlice( );
-			virtual void generateSliceIndices( ) { auto it = waitingIndices.begin(); generateSliceIndices( it, 0, 0 ); }
+			// virtual void generateSliceIndices( ) { auto it = waitingIndices.begin(); generateSliceIndices( it, 0, 0 ); }
 
 			virtual real_approx_t calculateSlice( );
 			
 			real_approx_t calculateIndex( const idx_t& );
 
+			size_t slice; // Currently computing slice.
+
 		private:
 			friend class PreCalculator<D>;
 
-			void generateSliceIndices( typename std::deque<idx_t>::iterator&, size_t, unsigned int );
-			size_t slice; // Currently computing slice. (May not be needed)
-			real_approx_t total;
-
+			// void generateSliceIndices( typename std::deque<idx_t>::iterator&, size_t, unsigned int );
+			// real_approx_t total;
 	};
 	
 	template< std::size_t D, typename real_approx_t=double > 
@@ -150,22 +200,22 @@ namespace Fisher {
 
 	// FUnctions to calculate the index of a given index within a slice.
 	template< > 
-	size_t IdxPos::calculate<1>( const std::array<unsigned int,1>& idx, size_t s ) { 
+	size_t IdxPos::calculate<1>( const typename IndexGenerator<1>::idx_t &idx, size_t s ) { 
 		return 0;
 	}
 
 	template< > 
-	size_t IdxPos::calculate<2>( const std::array<unsigned int,2>& idx, size_t s ) { 
+	size_t IdxPos::calculate<2>( const typename IndexGenerator<2>::idx_t &idx, size_t s ) { 
 		return idx[0];
 	}
 
 	template< > 
-	size_t IdxPos::calculate<3>( const std::array<unsigned int,3>& idx, size_t s ) { 
+	size_t IdxPos::calculate<3>( const typename IndexGenerator<3>::idx_t &idx, size_t s ) { 
 		return (idx[0]*(2*s-idx[0]+3))/2 + idx[1];
 	}
 
 	template< > 
-	size_t IdxPos::calculate<4>( const std::array<unsigned int,4>& idx, size_t s ) { 
+	size_t IdxPos::calculate<4>( const typename IndexGenerator<4>::idx_t &idx, size_t s ) { 
 		return (idx[0]*(3*s*(s-idx[0]+4)+idx[0]*idx[0]+11-6*idx[0]))/6 + (idx[1]*(2*(s-idx[0])-idx[1]+3))/2 + idx[2];
 	}
 
@@ -178,6 +228,38 @@ namespace Fisher {
 		data.emplace( s, numIndices );
 
 		return numIndices;
+	}
+
+	// Index Generator methods.
+	template< std::size_t D >
+	void IndexGenerator<D>::generate( const size_t s ) { 
+
+		constexpr auto C = boost::math::binomial_coefficient<double>;
+
+		slice = s; 
+		indices.resize( C( s+D-1, s ) );
+
+		currentGeneratingIndex = indices.begin();
+		generateSliceIndices( 0, 0 );
+	}
+
+	template< std::size_t D >
+	void IndexGenerator<D>::generateSliceIndices( size_t pos, size_t culm )  {
+		
+		if( pos < D - 2 ) {
+			for( auto i = 0; i <= slice - culm; ++i ) {
+				(*currentGeneratingIndex)[pos] = i;
+				generateSliceIndices( pos+1, culm + i );
+			}
+		} else {
+			for( auto i = 0; i <= slice - culm; ++i ) {
+				(*currentGeneratingIndex)[pos] = i;
+				(*currentGeneratingIndex)[pos+1] = slice - culm - i;
+				++currentGeneratingIndex;
+				if( currentGeneratingIndex != indices.end() ) (*currentGeneratingIndex) = *(currentGeneratingIndex-1);
+			}
+		}
+
 	}
 
 	// PreCalculator::preCalculate( )
@@ -406,17 +488,16 @@ namespace Fisher {
 	template< std::size_t D, typename real_approx_t >
 	void Calculator<D,real_approx_t>::initialiseSlice( ) {
 
+		// Generate indices for new siice.
+		waitingIndices.generate( slice );
+
 		// Remove slice that is no longer needed.
 		L.eraseSlice( slice-(D+1) );
 		dL_dlambda.eraseSlice( slice-(D+1) );
 
 		// Insert new slice. (This should have no effect on already existing slices).
-		L.insertSlice( slice );
-		dL_dlambda.insertSlice( slice );
-
-		// Generate indices for new siice.
-		waitingIndices.resize( L.getSlice(slice).size() );
-		generateSliceIndices( );
+		L.emplaceSlice( slice, waitingIndices.size() );
+		dL_dlambda.emplaceSlice( slice, waitingIndices.size() );
 
 		// Increment the slice ready for the next iteration.		
 		++slice;
@@ -431,29 +512,12 @@ namespace Fisher {
 
 		// Calculate the Fisher Information delta for this slice by accumulating the delta for each index.
 		real_approx_t sliceDelta = static_cast<real_approx_t>( 0 );
-		for( auto idx : waitingIndices ) sliceDelta += calculateIndex( idx );
-
-		return sliceDelta;
-	}
-
-	// Calculator::generateSliceIndices
-	template< std::size_t D, typename real_approx_t >
-	void Calculator<D,real_approx_t>::generateSliceIndices( typename std::deque<idx_t>::iterator &currentIdx, size_t pos, unsigned int culm )  {
-		
-		if( pos < D - 2 ) {
-			for( unsigned int i = 0; i <= slice - culm; ++i ) {
-				(*currentIdx)[pos] = i;
-				generateSliceIndices( currentIdx, pos+1, culm + i );
-			}
-		} else {
-			for( unsigned int i = 0; i <= slice - culm; ++i ) {
-				(*currentIdx)[pos] = i;
-				(*currentIdx)[pos+1] = slice - culm - i;
-				++currentIdx;
-				if( currentIdx != waitingIndices.end() ) (*currentIdx) = *(currentIdx-1);
-			}
+		// for( auto idx : waitingIndices ) sliceDelta += calculateIndex( idx );
+		for( auto i = 0; i < waitingIndices.size(); ++i ) {
+			sliceDelta += calculateIndex( waitingIndices[i] );
 		}
 
+		return sliceDelta;
 	}
 
 	// Calculator::calculateIndex( )
@@ -565,6 +629,8 @@ namespace Fisher {
 		}
 
 		// Initialise the next slice asynchronously. (Note, parent class initialiseSlice() is called in the absense of a “local” initialiseSlice()).
+		// NOTE: The above is actually a detriment when D=2 and lambda is small. This is presumably due to the overhead of calling the thread being higher than the time needed to execute the initialisation.
+		// However, it seems to be an improvement in other cases, especially where the runtimes are long, so we keep this method.
 		sliceInitTask = std::async( std::launch::async, [this]() { ThreadedCalculator<D,real_approx_t>::initialiseSlice(); } );
 
 		// sliceDelta is automatically accumulated by the indexCalculatorLoop( ) threads.
