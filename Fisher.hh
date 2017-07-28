@@ -102,25 +102,24 @@ namespace Fisher {
 		public: 
 			using idx_t = index_t<D>;
 			using slice_t = std::vector< real_approx_t >;
-			using size_type = typename std::unordered_map<size_t, slice_t>::size_type;
+			using size_type = typename std::array< slice_t, D+1 >::size_type;
 
 			SliceContainer( ) { }
 
-			real_approx_t& operator[] ( const idx_t &idx ) { auto s = sliceId(idx); return data.at( s )[ IdxPos::calculate<D>(idx, s) ]; }
-			real_approx_t& at( const idx_t &idx ) { auto s = sliceId(idx); return data.at( s ).at( IdxPos::calculate<D>(idx, s) ); }
+			// Indexing for specific elements.
+			real_approx_t& operator[] ( const idx_t &idx ) { auto s = sliceId(idx); return data[ s % (D+1) ][ IdxPos::calculate<D>(idx, s) ]; }
+			real_approx_t& at( const idx_t &idx ) { auto s = sliceId(idx); return data.at( s % (D+1) ).at( IdxPos::calculate<D>(idx, s) ); }
 
-			size_t insertSlice( size_t s );
-			size_type eraseSlice( size_t s ) { return data.erase( s ); }
+			// Indexing for slices.
+			slice_t& operator[] ( const size_type s ) { return data[ s % (D+1) ]; }
+			slice_t& at( const size_type s ) { return data.at( s % (D+1) ); }
 
-			template <class... Args> auto emplaceSlice ( Args&&... args ) { return data.emplace( args... ); };
-
-			void clear( ) noexcept { data.clear( ); }
-
-			slice_t & getSlice( size_t s ) { return data.at(s); }
+			auto size() { return data.size(); }
+			void clear() { for( auto slice : data ) slice.clear(); }
 
 		private:
 			size_t sliceId( const idx_t& idx ) { return std::accumulate( idx.cbegin(), idx.cend(), static_cast<size_t>(0) ); }
-			std::unordered_map<size_t, slice_t> data;
+			std::array< slice_t, D+1 > data;
 	};
 
 	template< std::size_t D > 
@@ -148,11 +147,9 @@ namespace Fisher {
 			SliceContainer<D,real_approx_t> L, dL_dlambda;
 			std::unordered_map<idx_t,real_approx_t> Q, dQ_dlambda, P, dP_dlambda; // Maybe make these map<idx_t,real_approx_t> instead of unordered_map, since they are being iterated over, but that means writing a compaitor class.
 
-			// std::deque<idx_t> waitingIndices;
 			IndexGenerator<D> waitingIndices;
 
 			virtual void initialiseSlice( );
-			// virtual void generateSliceIndices( ) { auto it = waitingIndices.begin(); generateSliceIndices( it, 0, 0 ); }
 
 			virtual real_approx_t calculateSlice( );
 			
@@ -163,8 +160,6 @@ namespace Fisher {
 		private:
 			friend class PreCalculator<D>;
 
-			// void generateSliceIndices( typename std::deque<idx_t>::iterator&, size_t, unsigned int );
-			// real_approx_t total;
 	};
 	
 	template< std::size_t D, typename real_approx_t=double > 
@@ -219,17 +214,6 @@ namespace Fisher {
 		return (idx[0]*(3*s*(s-idx[0]+4)+idx[0]*idx[0]+11-6*idx[0]))/6 + (idx[1]*(2*(s-idx[0])-idx[1]+3))/2 + idx[2];
 	}
 
-
-	template< std::size_t D, typename real_approx_t >
-	size_t SliceContainer<D,real_approx_t>::insertSlice( size_t s ) { 
-		constexpr auto C = boost::math::binomial_coefficient<double>;
-
-		auto numIndices = C( s+D-1, s );
-		data.emplace( s, numIndices );
-
-		return numIndices;
-	}
-
 	// Index Generator methods.
 	template< std::size_t D >
 	void IndexGenerator<D>::generate( const size_t s ) { 
@@ -266,14 +250,11 @@ namespace Fisher {
 	template< std::size_t D > 
 	template<typename real_approx_t> void PreCalculator<D>::preCalculate( Calculator<D,real_approx_t>* calc, const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda ) {
 
-		// Initialise the data elements.
-		calc->L.clear( );
-		calc->dL_dlambda.clear( );
-
-		calc->Q.clear( );
-		calc->dQ_dlambda.clear( );
-		calc->P.clear( );
-		calc->dP_dlambda.clear( );
+		// // Initialise the data elements. (Probably unnecessary)
+		// calc->Q.clear( );
+		// calc->dQ_dlambda.clear( );
+		// calc->P.clear( );
+		// calc->dP_dlambda.clear( );
 
 		calc->slice = 0;
 
@@ -481,6 +462,15 @@ namespace Fisher {
 			fisherInformation = runningTotal + calculateSlice( );
 		}
 
+		// Cleanup
+		for( auto container : { L, dL_dlambda } ) {
+			container.clear();
+		}
+
+		for( auto container : { Q, dQ_dlambda, P, dP_dlambda } ) {
+			container.clear();
+		}
+
 		return fisherInformation;
 	}
 
@@ -491,13 +481,14 @@ namespace Fisher {
 		// Generate indices for new siice.
 		waitingIndices.generate( slice );
 
-		// Remove slice that is no longer needed.
-		L.eraseSlice( slice-(D+1) );
-		dL_dlambda.eraseSlice( slice-(D+1) );
+		// Clear slice that is no longer needed. (This prevents element copy in the resize, below)
+		// NOTE: that both L and dL_dlambda are effectively implemented as circular arrays, so clearing the current slice effectively clears the old unneeded one.
+		L[ slice ].clear();
+		dL_dlambda[ slice ].clear();
 
-		// Insert new slice. (This should have no effect on already existing slices).
-		L.emplaceSlice( slice, waitingIndices.size() );
-		dL_dlambda.emplaceSlice( slice, waitingIndices.size() );
+		// Initialise the new slice to the correct size
+		L[ slice ].reserve( waitingIndices.size() );
+		dL_dlambda[ slice ].reserve( waitingIndices.size() );
 
 		// Increment the slice ready for the next iteration.		
 		++slice;
@@ -535,6 +526,7 @@ namespace Fisher {
 
 		// For each q[i,j], we calculate q[i,j, ...]*L[a-i, b-j, ...], skipping cases where any of the a-i, b-j, ... are less than zero.
 		for( auto&& q : Q ) {
+
 			idx_t prev_Idx;
 			size_t i;
 
@@ -545,6 +537,7 @@ namespace Fisher {
 			if (i != D) continue;
 
 			auto L_prev = L[prev_Idx];
+
 			LI -= (q.second)*L_prev;
 			dLI_dlambda -= dQ_dlambda[q.first]*L_prev + (q.second)*dL_dlambda[prev_Idx];
 		}
