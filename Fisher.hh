@@ -138,7 +138,7 @@ namespace Fisher {
 		public:
 			Calculator( ) { }
 
-			virtual real_approx_t operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda );
+			real_approx_t operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda );
 
 		protected:
 			using idx_t = typename SliceContainer<D,real_approx_t>::idx_t;
@@ -149,6 +149,7 @@ namespace Fisher {
 
 			IndexGenerator<D> waitingIndices;
 
+			virtual void preCalculate( const std::array<real_approx_t,D> &t, const real_approx_t p, const real_approx_t lambda ) { PreCalculator<D>::preCalculate( this, t, p, lambda ); }
 			virtual void initialiseSlice( );
 
 			virtual real_approx_t calculateSlice( );
@@ -168,13 +169,12 @@ namespace Fisher {
 			ThreadedCalculator( size_t numThreads = 0 );
 			virtual ~ThreadedCalculator( );
 
-			virtual real_approx_t operator() ( const std::array<real_approx_t,D>&, const real_approx_t, const real_approx_t );
-
 		private:
 
 			using idx_t = typename Calculator<D,real_approx_t>::idx_t;
 			using slice_t = typename Calculator<D,real_approx_t>::slice_t;
 
+			virtual void preCalculate( const std::array<real_approx_t,D>&, const real_approx_t, const real_approx_t );
 			virtual real_approx_t calculateSlice( );
 
 			void indexCalculatorLoop( size_t, size_t );
@@ -450,7 +450,7 @@ namespace Fisher {
 	real_approx_t Calculator<D,real_approx_t>::operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda ) {
 
 		// Pre calculation
-		PreCalculator<D>::preCalculate( this, t, p, lambda );
+		preCalculate( t, p, lambda );
 
 		// Initialise 
 		real_approx_t fisherInformation = static_cast<real_approx_t>(0);
@@ -587,14 +587,13 @@ namespace Fisher {
 	}
 
 	template< std::size_t D, typename real_approx_t >
-	real_approx_t ThreadedCalculator<D,real_approx_t>::operator() ( const std::array<real_approx_t,D>& t, const real_approx_t p, const real_approx_t lambda ) {
-		// Initialise the first slice asynchronously. (Note, parent class initialiseSlice() is called in the absense of a “local” initialiseSlice()).
-		// We use deferred (lazy) evaluation to make sure the computation initialisation happens before the first slice initialisation.
-		// We create the future now, becasue the computeSlice( ) function expects a future to wait on (which is usually launched asynchronously at the end of the previous computeSlice() call).
-		sliceInitTask = std::async( std::launch::deferred, [this]() { ThreadedCalculator<D,real_approx_t>::initialiseSlice(); } );
+	void ThreadedCalculator<D,real_approx_t>::preCalculate( const std::array<real_approx_t,D> &t, const real_approx_t p, const real_approx_t lambda ) {
+		// Perform parent class precalculation.
+		Calculator<D,real_approx_t>::preCalculate( t, p, lambda );
 
-		// Now we call the usual computation routines.
-		return Calculator<D,real_approx_t>::operator() ( t, p, lambda );
+		// Initialise the next slice asynchronously. (Note, parent class initialiseSlice() is called in the absense of a “local” initialiseSlice()).
+		// We create the future now, becasue the computeSlice( ) function expects a future to wait on (which is usually launched asynchronously at the end of the previous computeSlice() call).
+		sliceInitTask = std::async( std::launch::async, [this]() { ThreadedCalculator<D,real_approx_t>::initialiseSlice(); } );
 	}
 
 	// ThreadedCalculator::calculateSlice( )
@@ -622,7 +621,7 @@ namespace Fisher {
 		}
 
 		// Initialise the next slice asynchronously. (Note, parent class initialiseSlice() is called in the absense of a “local” initialiseSlice()).
-		// NOTE: The above is actually a detriment when D=2 and lambda is small. This is presumably due to the overhead of calling the thread being higher than the time needed to execute the initialisation.
+		// NOTE: This actually a detriment when D=2 and lambda is small. This is presumably due to the overhead of calling the thread being higher than the time needed to execute the initialisation.
 		// However, it seems to be an improvement in other cases, especially where the runtimes are long, so we keep this method.
 		sliceInitTask = std::async( std::launch::async, [this]() { ThreadedCalculator<D,real_approx_t>::initialiseSlice(); } );
 
