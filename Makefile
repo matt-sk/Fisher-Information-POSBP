@@ -1,9 +1,12 @@
-CC=g++-7
+CXX=g++-7
+CXXFLAGS=-O3 -std=c++14
 
-default: Fisher.so Fisher
+all: Fisher.so Fisher
 
-Fisher.so: FisherLibrary.cc Fisher.hh
-	$(CC) -O3 -std=c++14 -shared -fPIC -o Fisher.so FisherLibrary.cc
+%.so: %.so.cc
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -shared -fPIC $(CPPFLAGS) $(LDPATH) -o $@ $(LDFILES) $<
 
-Fisher: calcFisher.cc Fisher.hh
-	$(CC) -O3 -std=c++14 -o Fisher -lboost_program_options-mt calcFisher.cc
+Fisher.so: Fisher.hh
+
+Fisher: Fisher.hh
+Fisher: LDLIBS=-lboost_program_options
