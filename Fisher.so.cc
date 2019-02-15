@@ -36,6 +36,19 @@ extern "C" double FI4( double t1, double t2, double t3, double t4, double p, dou
 	return FI( {t1, t2, t3, t4}, p, lambda );
 }
 
+extern "C" float FI5_f( float t1, float t2, float t3, float t4, float t5, float p, float lambda ) {
+	Fisher::Calculator<5,float> FI;
+
+	return FI( {t1, t2, t3, t4, t5}, p, lambda );
+}
+
+extern "C" double FI5( double t1, double t2, double t3, double t4, double t5, double p, double lambda ) {
+	Fisher::Calculator<5,double> FI;
+
+	return FI( {t1, t2, t3, t4, t5}, p, lambda );
+}
+
+
 extern "C" float FI2_threaded_f( float t1, float t2, float p, float lambda, size_t numThreads ) {
 	Fisher::ThreadedCalculator<2,float> FI( numThreads );
 
@@ -70,4 +83,16 @@ extern "C" double FI4_threaded( double t1, double t2, double t3, double t4, doub
 	Fisher::ThreadedCalculator<4,double> FI( numThreads );
 
 	return FI( {t1, t2, t3, t4}, p, lambda );
+}
+
+extern "C" float FI5_threaded_f( float t1, float t2, float t3, float t4, float t5, float p, float lambda, size_t numThreads ) {
+	Fisher::ThreadedCalculator<5,float> FI( numThreads );
+
+	return FI( {t1, t2, t3, t4, t5}, p, lambda );
+}
+
+extern "C" double FI5_threaded( double t1, double t2, double t3, double t4, double t5, double p, double lambda, size_t numThreads ) {
+	Fisher::ThreadedCalculator<5,double> FI( numThreads );
+
+	return FI( {t1, t2, t3, t4, t5}, p, lambda );
 }

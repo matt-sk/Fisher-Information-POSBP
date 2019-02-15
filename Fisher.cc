@@ -18,7 +18,7 @@ int main( int argc, char* argv[] ) {
 	desc.add_options()
 		("help,h", "show this help message")
 		("threaded,t", opts::value<size_t>()->implicit_value(2)->default_value(0), "Number of worker threads.")
-		("input-parameter", opts::value< std::vector<real_approx_t> >(), "t1, t2, [t3, t4,] p, lambda")
+		("input-parameter", opts::value< std::vector<real_approx_t> >(), "t1, t2, [t3, t4, t5] p, lambda")
 	;
 
 	opts::positional_options_description posOpts;
@@ -36,7 +36,7 @@ int main( int argc, char* argv[] ) {
 	auto fisherParameters = optVars["input-parameter"].as<std::vector<real_approx_t>>( );
 	auto numParameters = fisherParameters.size( );
 
-	if( numParameters > 6 ) {
+	if( numParameters > 7 ) {
 		std::cerr << "Too many parameters." << std::endl;
 		return 1;
 	}
@@ -57,6 +57,8 @@ int main( int argc, char* argv[] ) {
 	if( numWorkerThreads > 1) {
 		std::clog << "Threaded computation using " << numWorkerThreads << " threads" << std::endl;
 		switch( numParameters ) {
+			case 7 :	FI = Fisher::ThreadedCalculator<5,real_approx_t>( numWorkerThreads ) ( { fisherParameters[0], fisherParameters[1], fisherParameters[2], fisherParameters[3], fisherParameters[4] }, fisherParameters[5], fisherParameters[6] );
+						break;
 			case 6 :	FI = Fisher::ThreadedCalculator<4,real_approx_t>( numWorkerThreads ) ( { fisherParameters[0], fisherParameters[1], fisherParameters[2], fisherParameters[3] }, fisherParameters[4], fisherParameters[5] );
 						break;
 			case 5 :	FI = Fisher::ThreadedCalculator<3,real_approx_t>( numWorkerThreads ) ( { fisherParameters[0], fisherParameters[1], fisherParameters[2] }, fisherParameters[3], fisherParameters[4] );
@@ -68,11 +70,13 @@ int main( int argc, char* argv[] ) {
 	} else {
 		std::clog << "Sequential computation" << std::endl;
 		switch( numParameters ) {
+			case 7 :	FI = Fisher::Calculator<5,real_approx_t>() ( { fisherParameters[0], fisherParameters[1], fisherParameters[2], fisherParameters[3], fisherParameters[4] }, fisherParameters[5], fisherParameters[6] );
+						break;
 			case 6 :	FI = Fisher::Calculator<4,real_approx_t>() ( { fisherParameters[0], fisherParameters[1], fisherParameters[2], fisherParameters[3] }, fisherParameters[4], fisherParameters[5] );
 						break;
-			case 5 :	FI = Fisher::Calculator<3,real_approx_t>()( { fisherParameters[0], fisherParameters[1], fisherParameters[2] }, fisherParameters[3], fisherParameters[4] );
+			case 5 :	FI = Fisher::Calculator<3,real_approx_t>() ( { fisherParameters[0], fisherParameters[1], fisherParameters[2] }, fisherParameters[3], fisherParameters[4] );
 						break;
-			case 4 :	FI = Fisher::Calculator<2,real_approx_t>()( { fisherParameters[0], fisherParameters[1] }, fisherParameters[2], fisherParameters[3] );
+			case 4 :	FI = Fisher::Calculator<2,real_approx_t>() ( { fisherParameters[0], fisherParameters[1] }, fisherParameters[2], fisherParameters[3] );
 						break;
 			// case 3 :	FI = Fisher::Calculator<1,real_approx_t>()( { fisherParameters[0] }, fisherParameters[1], fisherParameters[2] );
 		}
